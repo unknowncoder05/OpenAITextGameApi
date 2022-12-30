@@ -62,6 +62,8 @@ def get_integer(txt):
     except Exception as e:
         print("err get_integer", txt, e)
     return 0
+
+
 limiter = Limiter(key_func=get_remote_address)
 
 openai.api_key = os.getenv("OPENAPI_API_KEY")
@@ -112,9 +114,29 @@ key selling points: {key_selling_points}
 desired tone: {desired_tone}
 """
 
-RESUME_PROMPT_FORMATS = dict(
-    pros="""make a resume for this person "{description}":""",
-)
+RESUME_PROMPT_FORMATS = """make a well formatted resume for this person:
+{description}"""
+
+SCRIPT_PROMPT_FORMAT = """Generate a script for {prompt}:"""
+
+
+"""
+Polarity: This measures the overall sentiment of a piece of text as positive, negative, or neutral.
+
+Subjectivity: This measures how subjective or objective a piece of text is. Text that is more subjective is more likely to express personal opinions or feelings, while text that is more objective is more likely to present facts and information.
+
+Valence: This measures the intensity of the sentiment expressed in a piece of text. A text with a high valence might be very positive or very negative, while a text with a low valence might be more neutral.
+
+Emotion: This measures the specific emotions that are expressed in a piece of text, such as happiness, sadness, anger, fear, or surprise.
+"""
+
+SENTIMENT_PROMPT_FORMAT = """sentiment analysis for this messages:
+t: text
+Polarity from 1 to 10, Subjectivity from 1 to 10, Valence from 1 to 10, Emotion
+t: I had a terrible experience at that restaurant. The service was slow and the food was overcooked. I would never go back again.
+1, 8, 8, Anger
+t: {prompt}
+"""
 
 
 class ResumeRequest(BaseModel):
@@ -129,6 +151,14 @@ class Prompt(BaseModel):
     prompt: str
 
 
+class ScriptRequest(BaseModel):
+    name: str
+    description: str
+    target_audience: str
+    key_selling_points: str
+    desired_tone: str
+
+
 class CopyRequest(BaseModel):
     name: str
     description: str
@@ -139,6 +169,10 @@ class CopyRequest(BaseModel):
 
 class CopyResponse(BaseModel):
     copy_text: str
+
+
+class TextResponse(BaseModel):
+    text: str
 
 
 class ActionResponse(BaseModel):
@@ -159,22 +193,29 @@ class CriticResponse(BaseModel):
     resources: int
 
 
+class SentimentResponse(BaseModel):
+    polarity: str
+    subjectivity: str
+    valence: str
+    emotion: str
+
+
 @app.get("/health")
-def health():
+async def health():
     return {"status": "ok"}
 
 
 @app.post("/start")
 @limiter.limit("5/minute")
-def start_game(request: Request):
+async def start_game(request: Request):
     user_ip = request.client.host
     create_session(user_ip)
     return ActionResponse(response="You wake up in a dark room. You can't remember how you got here. You can see a door and a window. What do you do?", game_over=False)
 
 
 @app.post("/action")
-@limiter.limit("30/minute")
-def action(request: Request, prompt: Prompt):
+@limiter.limit("40/minute")
+async def action(request: Request, prompt: Prompt):
     """
     Receives an user action and requests the model with the previous saved session responses. Returns an answer.
     """
@@ -200,7 +241,7 @@ def action(request: Request, prompt: Prompt):
 
 @app.post("/critic")
 @limiter.limit("5/minute")
-def critic(request: Request, prompt: Prompt):
+async def critic(request: Request, prompt: Prompt):
 
     return CriticResponse(
         pros=gpt(PROMPT_FORMATS['pros'].format(
@@ -227,7 +268,7 @@ def critic(request: Request, prompt: Prompt):
 
 @app.post("/copy")
 @limiter.limit("5/minute")
-def copy(request: Request, copy_request: CopyRequest):
+async def copy(request: Request, copy_request: CopyRequest):
 
     return CopyResponse(
         copy_text=gpt(COPY_PROMPT_FORMAT.format(
@@ -242,12 +283,38 @@ def copy(request: Request, copy_request: CopyRequest):
 
 @app.post("/resume")
 @limiter.limit("5/minute")
-def resume(request: Request, resume_request: ResumeRequest):
+async def resume(request: Request, resume_request: ResumeRequest):
 
     return ResumeResponse(
         resume=gpt(RESUME_PROMPT_FORMATS.format(
             description=resume_request.description,
         ), temperature=0.1, max_tokens=400, presence_penalty=2, frequency_penalty=2),
+    )
+
+
+@app.post("/script")
+@limiter.limit("5/minute")
+async def script(request: Request, prompt: Prompt):
+
+    return TextResponse(
+        text=gpt(SCRIPT_PROMPT_FORMAT.format(
+            prompt=prompt.prompt,
+        ), temperature=0.1, max_tokens=400, presence_penalty=2, frequency_penalty=2),
+    )
+
+
+@app.post("/sentiment")
+@limiter.limit("5/minute")
+async def sentiment(request: Request, prompt: Prompt):
+    res = gpt(SENTIMENT_PROMPT_FORMAT.format(
+        prompt=prompt.prompt,
+    ), temperature=0.1, max_tokens=100, presence_penalty=2, frequency_penalty=2)
+    results = res.replace(" ", '').split(",")
+    return SentimentResponse(
+        polarity=results[0],
+        subjectivity=results[1],
+        valence=results[2],
+        emotion=results[3],
     )
 
 
