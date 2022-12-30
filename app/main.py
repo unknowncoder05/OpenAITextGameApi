@@ -173,7 +173,7 @@ def start_game(request: Request):
 
 
 @app.post("/action")
-@limiter.limit("5/minute")
+@limiter.limit("30/minute")
 def action(request: Request, prompt: Prompt):
     """
     Receives an user action and requests the model with the previous saved session responses. Returns an answer.
