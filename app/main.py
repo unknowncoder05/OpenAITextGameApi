@@ -11,6 +11,18 @@ from slowapi.util import get_remote_address
 
 SESSIONS = {}
 
+def check_content_filter(prompt):
+    completions = openai.Completion.create(
+        engine="content-filter-alpha",
+        prompt=f'<|endoftext|>[{prompt}]\n--\nLabel:',
+        max_tokens=1,
+        temperature=0,
+        top_p=0
+    )
+    print('content filter result', completions.choices[0].text)
+    if completions.choices[0].text == '2':
+        raise HTTPException(status_code=404, detail="Inappropriate input")
+
 def remove_list_numeration(string):
     return re.sub(r'^\d\s*\.*|^-', '', string).strip()
 
@@ -243,6 +255,7 @@ async def action(request: Request, prompt: Prompt):
     """
     Receives an user action and requests the model with the previous saved session responses. Returns an answer.
     """
+    check_content_filter(prompt.prompt)
     # check if the user has a valid session
     if request.client.host not in SESSIONS:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -266,6 +279,7 @@ async def action(request: Request, prompt: Prompt):
 @app.post("/critic")
 @limiter.limit("5/minute")
 async def critic(request: Request, prompt: Prompt):
+    check_content_filter(prompt.prompt)
 
     return CriticResponse(
         pros=gpt(PROMPT_FORMATS['pros'].format(
@@ -293,22 +307,24 @@ async def critic(request: Request, prompt: Prompt):
 @app.post("/copy")
 @limiter.limit("5/minute")
 async def copy(request: Request, copy_request: CopyRequest):
+    rendered_prompt = ' '.join([
+        copy_request.name,
+        copy_request.description,
+        copy_request.target_audience,
+        copy_request.key_selling_points,
+        copy_request.desired_tone,
+    ])
+    check_content_filter(rendered_prompt)
 
     return CopyResponse(
-        copy_text=gpt(COPY_PROMPT_FORMAT.format(
-            name=copy_request.name,
-            description=copy_request.description,
-            target_audience=copy_request.target_audience,
-            key_selling_points=copy_request.key_selling_points,
-            desired_tone=copy_request.desired_tone,
-        ), temperature=0.1, max_tokens=400, presence_penalty=2, frequency_penalty=2),
+        copy_text=gpt(rendered_prompt, temperature=0.1, max_tokens=400, presence_penalty=2, frequency_penalty=2),
     )
 
 
 @app.post("/resume")
 @limiter.limit("5/minute")
 async def resume(request: Request, resume_request: ResumeRequest):
-
+    check_content_filter(resume_request.description)
     return ResumeResponse(
         resume=gpt(RESUME_PROMPT_FORMATS.format(
             description=resume_request.description,
@@ -330,6 +346,7 @@ async def script(request: Request, prompt: Prompt):
 @app.post("/sentiment")
 @limiter.limit("5/minute")
 async def sentiment(request: Request, prompt: Prompt):
+    check_content_filter(prompt.promp)
     res = gpt(SENTIMENT_PROMPT_FORMAT.format(
         prompt=prompt.prompt,
     ), temperature=0.1, max_tokens=100, presence_penalty=2, frequency_penalty=2)
@@ -346,6 +363,7 @@ async def sentiment(request: Request, prompt: Prompt):
 @app.post("/ideas")
 @limiter.limit("10/minute")
 async def ideas(request: Request, prompt: Prompt):
+    check_content_filter(prompt.prompt)
     res = gpt(IDEAS_PROMPT_FORMAT.format(
         prompt=prompt.prompt,
     ), temperature=0.9, max_tokens=500, presence_penalty=2, frequency_penalty=2)
@@ -359,6 +377,7 @@ async def ideas(request: Request, prompt: Prompt):
 @app.post("/app-features")
 @limiter.limit("10/minute")
 async def app_features(request: Request, features: ListRequest):
+    check_content_filter(features.prompt)
     res = gpt(APP_FEATURES_PROMPT_FORMAT.format(
         previous_features='\n'.join(features.prompts),
     ), temperature=0.9, max_tokens=500, presence_penalty=2, frequency_penalty=2)
