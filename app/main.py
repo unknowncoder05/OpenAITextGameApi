@@ -11,6 +11,11 @@ from slowapi.util import get_remote_address
 
 SESSIONS = {}
 
+def remove_list_numeration(string):
+    return re.sub(r'^\d\s*\.*|^-', '', string).strip()
+
+def remove_empty_items(items):
+    return [item for item in items if item.strip()]
 
 def create_session(user_ip):
     SESSIONS[user_ip] = [
@@ -27,7 +32,7 @@ Narrator: You wake up in a dark room. You can't remember how you got here. You c
     ]
 
 
-def execute_completion_model(prompt, model="text-davinci-002", temperature=1, max_tokens=100, many=False, *args, **kwargs):
+def execute_completion_model(prompt, model="text-babbage-001", temperature=1, max_tokens=100, many=False, *args, **kwargs):# text-davinci-002
     """
     Executes the completion model with the given parameters and returns the list of responses.
     """
@@ -41,6 +46,7 @@ def execute_completion_model(prompt, model="text-davinci-002", temperature=1, ma
     if many:
         return [x.text.strip() for x in response.choices]
     else:
+        print(response.choices[0])
         return response.choices[0].text.strip()
 
 
@@ -132,10 +138,20 @@ Emotion: This measures the specific emotions that are expressed in a piece of te
 
 SENTIMENT_PROMPT_FORMAT = """sentiment analysis for this messages:
 t: text
-Polarity from 1 to 10, Subjectivity from 1 to 10, Valence from 1 to 10, Emotion
+Polarity from 1 to 10, Subjectivity from 1 to 10, Valence from 1 to 10, Emotion, Emoji
 t: I had a terrible experience at that restaurant. The service was slow and the food was overcooked. I would never go back again.
-1, 8, 8, Anger
+1, 8, 8, Anger, 😠
 t: {prompt}
+"""
+IDEAS_PROMPT_FORMAT = """generate 5 effective and useful ideas for {prompt}
+separate each idea with only one line break, don't number them
+Ideas:
+"""
+
+APP_FEATURES_PROMPT_FORMAT = """generate 5 new features for an app with this features:
+{previous_features}
+separate each idea with only one line break, don't number them
+New unique Features:
 """
 
 
@@ -149,6 +165,9 @@ class ResumeResponse(BaseModel):
 
 class Prompt(BaseModel):
     prompt: str
+
+class ListRequest(BaseModel):
+    prompts: list
 
 
 class ScriptRequest(BaseModel):
@@ -198,6 +217,11 @@ class SentimentResponse(BaseModel):
     subjectivity: str
     valence: str
     emotion: str
+    emote: str
+
+
+class ListResponse(BaseModel):
+    results: list
 
 
 @app.get("/health")
@@ -315,6 +339,33 @@ async def sentiment(request: Request, prompt: Prompt):
         subjectivity=results[1],
         valence=results[2],
         emotion=results[3],
+        emote=results[4],
+    )
+
+
+@app.post("/ideas")
+@limiter.limit("10/minute")
+async def ideas(request: Request, prompt: Prompt):
+    res = gpt(IDEAS_PROMPT_FORMAT.format(
+        prompt=prompt.prompt,
+    ), temperature=0.9, max_tokens=500, presence_penalty=2, frequency_penalty=2)
+    results = [remove_list_numeration(x) for x in res.split("\n")]
+    results = remove_empty_items(results)
+    return ListResponse(
+        results=results,
+    )
+
+
+@app.post("/app-features")
+@limiter.limit("10/minute")
+async def app_features(request: Request, features: ListRequest):
+    res = gpt(APP_FEATURES_PROMPT_FORMAT.format(
+        previous_features='\n'.join(features.prompts),
+    ), temperature=0.9, max_tokens=500, presence_penalty=2, frequency_penalty=2)
+    results = [remove_list_numeration(x.strip()) for x in res.split("\n")]
+    results = remove_empty_items(results)
+    return ListResponse(
+        results=results,
     )
 
 
