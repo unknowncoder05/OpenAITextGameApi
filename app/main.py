@@ -91,9 +91,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 origins = [
-    "http://localhost",
-    "http://localhost:3000",
-    "*",
+    "*"
 ]
 
 app.add_middleware(
