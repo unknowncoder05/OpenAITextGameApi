@@ -345,7 +345,7 @@ async def script(request: Request, prompt: Prompt):
 @app.post("/sentiment")
 @limiter.limit("5/minute")
 async def sentiment(request: Request, prompt: Prompt):
-    check_content_filter(prompt.promp)
+    check_content_filter(prompt.prompt)
     res = gpt(SENTIMENT_PROMPT_FORMAT.format(
         prompt=prompt.prompt,
     ), temperature=0.1, max_tokens=100, presence_penalty=2, frequency_penalty=2)
